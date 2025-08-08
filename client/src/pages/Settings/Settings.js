@@ -8,7 +8,7 @@ import {
   MoonIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../../contexts/AuthContext';
-import { useDarkMode } from '../../hooks/useDarkMode';
+import { useDarkMode } from '../../contexts/DarkModeContext';
 
 const Settings = () => {
   const { user } = useAuth();
