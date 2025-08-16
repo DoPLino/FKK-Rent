@@ -147,7 +147,7 @@ const updateStatusValidation = [
     .isMongoId()
     .withMessage('Valid equipment ID is required'),
   body('status')
-    .isIn(['available', 'booked', 'rented', 'maintenance', 'damaged', 'lost'])
+    .isIn(['available', 'checked-out', 'maintenance', 'damaged'])
     .withMessage('Invalid status')
 ];
 
@@ -184,7 +184,7 @@ const queryValidation = [
     .withMessage('Invalid category'),
   query('status')
     .optional()
-    .isIn(['available', 'booked', 'rented', 'maintenance', 'damaged', 'lost'])
+    .isIn(['available', 'checked-out', 'maintenance', 'damaged'])
     .withMessage('Invalid status'),
   query('location')
     .optional()

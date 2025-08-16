@@ -1,30 +1,47 @@
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const {
+  verifyAccessToken,
+} = require('../utils/jwt');
 
 // Middleware to verify JWT token
 const authenticateToken = async (req, res, next) => {
   try {
+    // Allow disabling auth in dev via env flag
+    const authDisabled = String(process.env.AUTH_DISABLE || '').toLowerCase() === 'true';
+    if (authDisabled && process.env.NODE_ENV === 'development') {
+      // Minimal mock user (admin) to unlock all routes
+      req.user = {
+        _id: '000000000000000000000000',
+        email: 'dev@local',
+        role: 'admin',
+        isActive: true
+      };
+      return next();
+    }
+
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    const bearer = authHeader && authHeader.split(' ')[1];
+    const cookieToken = req.cookies?.accessToken;
+    const token = bearer || cookieToken; // Prefer Authorization header, fallback to cookie
 
     if (!token) {
-      return res.status(401).json({ 
-        message: 'Access denied. No token provided.' 
+      return res.status(401).json({
+        message: 'Authentication required.'
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = verifyAccessToken(token);
     const user = await User.findById(decoded.id).select('-password');
 
     if (!user) {
-      return res.status(401).json({ 
-        message: 'Invalid token. User not found.' 
+      return res.status(401).json({
+        message: 'Invalid token. User not found.'
       });
     }
 
     if (!user.isActive) {
-      return res.status(401).json({ 
-        message: 'Account is deactivated.' 
+      return res.status(401).json({
+        message: 'Account is deactivated.'
       });
     }
 
@@ -32,17 +49,17 @@ const authenticateToken = async (req, res, next) => {
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        message: 'Invalid token.' 
+      return res.status(401).json({
+        message: 'Invalid token.'
       });
     }
     if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
-        message: 'Token expired.' 
+      return res.status(401).json({
+        message: 'Token expired.'
       });
     }
-    return res.status(500).json({ 
-      message: 'Token verification failed.' 
+    return res.status(500).json({
+      message: 'Token verification failed.'
     });
   }
 };
@@ -154,7 +171,7 @@ const optionalAuth = async (req, res, next) => {
     const token = authHeader && authHeader.split(' ')[1];
 
     if (token) {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = verifyAccessToken(token);
       const user = await User.findById(decoded.id).select('-password');
       
       if (user && user.isActive) {

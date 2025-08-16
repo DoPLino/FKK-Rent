@@ -1,0 +1,115 @@
+<context>
+# Overview
+FilmEquipment Manager augments equipment rental operations with AI-driven automation and decision support. This PRD focuses on adding five capabilities:
+1) Visual damage analysis (image diff + CNN-ready)
+2) A/B test engine for dynamic pricing experiments
+3) Natural language interface (search and booking intents)
+4) Price history display and price-drop alerts
+5) Voice-to-booking (browser speech recognition)
+
+These features build on the existing Node/Express + MongoDB backend and React frontend.
+
+# Core Features
+- Visual Damage Analysis
+  - What: Detects visual anomalies between baseline and return photos; outputs damage score and hotspots.
+  - Why: Faster check-in, reduced disputes, better maintenance planning.
+  - How: Phase 1 pixel-diff (pixelmatch/pngjs). Phase 2 CNN/YOLO inference service; identical API contract.
+
+- A/B Test Engine (Pricing)
+  - What: Define pricing experiments with variants and traffic splits; collect bookings/revenue metrics.
+  - Why: Increase revenue, optimize conversion.
+  - How: ABTest model stores variants and splits; middleware assigns variant per session; metrics aggregated nightly.
+
+- Natural Language Interface (NLI)
+  - What: Parse free-text queries into structured filters (categories, constraints, dates, budget) and suggest equipment/booking.
+  - Why: Frictionless discovery and faster booking.
+  - How: Phase 1 rules; Phase 2 LLM adapter. API: /ai/nlu/parse and /ai/nlu/book.
+
+- Price History & Alerts
+  - What: Show historical rental rates and allow user-defined price alerts.
+  - Why: Transparency for customers; retention via notifications.
+  - How: Append `priceHistory` entries on updates; `PriceAlert` model; daily worker checks thresholds and notifies.
+
+- Voice-to-Booking
+  - What: Micro UI to capture speech, feed NLI, and return suggestions/booking draft.
+  - Why: Speed for on-the-go users; accessibility.
+  - How: Web Speech API (client); uses NLI endpoints; fallback to manual input.
+
+# User Experience
+- Personas: Ops Staff, Power Users, Casual Renters.
+- Flows:
+  1) Check-in flow with photo upload -> damage score -> optional maintenance ticket.
+  2) Pricing manager: create A/B test, monitor performance dashboard.
+  3) Search bar with natural language + voice; results render suggested kits.
+  4) Equipment detail: price history chart + “Set alert”.
+- UI notes: Reuse design tokens in design.json; dark mode supported.
+</context>
+<PRD>
+# Technical Architecture
+- Backend: Node.js/Express, MongoDB/Mongoose.
+- New Models:
+  - ABTest { name, scope='pricing', equipment[], variants[{key, priceDeltaPct, rules}], trafficSplit[], status, metrics }
+  - PriceAlert { user, equipment, targetPrice, period, active, lastNotifiedAt }
+  - Equipment.priceHistory[]: { date, price, period, source, note }
+- New Routes (all under /api/ai, auth required):
+  - POST /damage/analyze { baselineImagePngBase64, currentImagePngBase64 } -> { damageScore }
+  - POST /nlu/parse { text } -> { parsed }
+  - POST /nlu/book { parsed, userId } -> { suggestions }
+  - POST /price-experiments -> create
+  - GET  /price-experiments/:id -> fetch
+  - GET  /price-history/:equipmentId -> { rentalRate, priceHistory }
+  - POST /price-alerts -> create; GET /price-alerts -> list; DELETE /price-alerts/:id -> deactivate
+- AI Services:
+  - Phase 1 damage: pixelmatch/pngjs; optional sharp.
+  - Phase 2 damage: YOLO/CNN inference microservice (HTTP gRPC); same response shape.
+  - NLI: rule-based parser; optional LLM via provider.
+- Workers:
+  - Nightly metrics aggregation (bookings, revenue per ABTest variant).
+  - PriceAlert notifier compares `targetPrice` vs. current rental rate.
+
+# APIs and Integrations
+- Keep responses shaped with { success, data|result, message } pattern used in client services.
+- Auth via existing JWT middleware.
+- Optional external: object storage for images, model inference endpoint.
+
+# Infrastructure Requirements
+- Add queue/cron: node-cron or hosted scheduler for nightly jobs.
+- Feature flags: env vars for enabling YOLO/LLM backends.
+
+# Development Roadmap
+- MVP (Phase 1)
+  1) /api/ai route group + controllers
+  2) Visual damage via pixel diff; client upload UI stub
+  3) NLI parse + book (rules); natural language search bar + voice button
+  4) Price history read + alert CRUD; minimal client hooks
+  5) A/B test model + create/get; manual variant assignment for now
+
+- Phase 2
+  6) Booking flow variant assignment middleware + metric logging
+  7) Nightly workers: metrics aggregation + price alert notifications
+  8) YOLO/CNN inference integration, bounding boxes heatmap overlay
+  9) LLM-based NLI; multilingual prompts; fallbacks
+  10) Price history charts; experiment dashboards
+
+- Phase 3
+  11) Full analytics: lift, CR, revenue per variant; auto-stop rules
+  12) Alert channels: email, push; user prefs
+  13) Access control and audit logs for experiments
+
+# Logical Dependency Chain
+- Foundation: models (ABTest, PriceAlert), route group, basic controllers
+- Then: client services + simple UI (NLI bar, voice button, price history)
+- Then: variant assignment + metrics; cron jobs
+- Then: external AI integrations (YOLO, LLM), dashboards
+
+# Risks and Mitigations
+- Image variability -> normalize inputs (resize/crop) and threshold tuning; provide manual override
+- Model latency -> async processing and webhooks; progressive UI
+- Privacy/compliance -> secure image storage, data retention policies
+- Experiment leakage -> audience segmentation and sticky assignment keys
+
+# Appendix
+- Response shapes mirror existing aiService usage (success, data/results, message)
+- Design: use tokens from design.json; ensure dark mode compatibility
+- Testing: snapshot APIs, golden images for damage diff; unit tests for rules parser
+</PRD>

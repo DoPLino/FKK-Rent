@@ -73,9 +73,8 @@ class PredictionEngine {
       const seasonalMultiplier = this.patterns.seasonalTrends[equipment.category]?.[season] || 1.0;
       
       // Apply day of week adjustments
-      const dayOfWeek = start.toLocaleDateString('en-US', { weekday: 'lowercase' });
+      const dayOfWeek = start.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
       const dayMultiplier = this.patterns.dayOfWeek[dayOfWeek] || 1.0;
-
       // Calculate final probability
       const finalProbability = baseProbability * seasonalMultiplier * dayMultiplier;
 

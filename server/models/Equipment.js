@@ -69,7 +69,7 @@ const equipmentSchema = new mongoose.Schema({
   }],
   status: {
     type: String,
-    enum: ['available', 'booked', 'rented', 'maintenance', 'damaged', 'lost'],
+    enum: ['available', 'checked-out', 'maintenance', 'damaged'],
     default: 'available'
   },
   location: {
@@ -212,18 +212,25 @@ equipmentSchema.pre('save', async function(next) {
   next();
 });
 
-// Method to update status
+// Method to update status with validation and associated timestamps
 equipmentSchema.methods.updateStatus = function(newStatus, userId) {
+  const allowed = ['available', 'checked-out', 'maintenance', 'damaged'];
+  if (!allowed.includes(newStatus)) {
+    const err = new Error(`Invalid status. Allowed values are: ${allowed.join(', ')}`);
+    err.name = 'ValidationError';
+    throw err;
+  }
+
   this.status = newStatus;
   this.lastModifiedBy = userId;
-  
-  if (newStatus === 'rented') {
+
+  if (newStatus === 'checked-out') {
     this.lastCheckedOut = new Date();
     this.totalRentals += 1;
   } else if (newStatus === 'available') {
     this.lastCheckedIn = new Date();
   }
-  
+
   return this.save();
 };
 
@@ -258,7 +265,7 @@ equipmentSchema.statics.getStatistics = async function() {
         _id: null,
         total: { $sum: 1 },
         available: { $sum: { $cond: [{ $eq: ['$status', 'available'] }, 1, 0] } },
-        rented: { $sum: { $cond: [{ $eq: ['$status', 'rented'] }, 1, 0] } },
+        checkedOut: { $sum: { $cond: [{ $eq: ['$status', 'checked-out'] }, 1, 0] } },
         maintenance: { $sum: { $cond: [{ $eq: ['$status', 'maintenance'] }, 1, 0] } },
         totalValue: { $sum: '$currentValue' },
         totalRevenue: { $sum: '$totalRevenue' }
@@ -269,7 +276,7 @@ equipmentSchema.statics.getStatistics = async function() {
   return stats[0] || {
     total: 0,
     available: 0,
-    rented: 0,
+    checkedOut: 0,
     maintenance: 0,
     totalValue: 0,
     totalRevenue: 0

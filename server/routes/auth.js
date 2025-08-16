@@ -132,7 +132,8 @@ router.post('/reset-password', authLimiter, resetPasswordValidation, resetPasswo
 router.get('/me', authenticateToken, getMe);
 router.put('/me', authenticateToken, updateProfileValidation, updateProfile);
 router.put('/change-password', authenticateToken, changePasswordValidation, changePassword);
-router.post('/refresh', authenticateToken, refreshToken);
+// Refresh is public; it uses refresh token validation
+router.post('/refresh', refreshToken);
 router.post('/logout', authenticateToken, logout);
 
 module.exports = router;

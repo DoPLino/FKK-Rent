@@ -2,19 +2,38 @@
  * Middleware to check user roles
  */
 
+/**
+ * Factory for role‐checking middleware.
+ * @param {string[]} allowedRoles
+ * @returns {import('express').RequestHandler}
+ */
 const checkRole = (allowedRoles) => {
+  if (!Array.isArray(allowedRoles) || allowedRoles.length === 0) {
+    throw new Error('checkRole requires a non‐empty array of roles');
+  }
+  const normalizedAllowed = allowedRoles.map(r => String(r).toLowerCase());
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ message: 'Authentication required' });
     }
 
-    if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ 
-        message: 'Access denied. Insufficient permissions.' 
+    // Support both a single role (req.user.role) and multiple (req.user.roles)
+    const rawRoles = Array.isArray(req.user?.roles)
+      ? req.user.roles
+      : [req.user?.role];
+    const normalizedUserRoles = rawRoles
+      .filter(Boolean)
+      .map(r => String(r).toLowerCase());
+    const hasRole = normalizedUserRoles.some(r =>
+      normalizedAllowed.includes(r)
+    );
+    if (!hasRole) {
+      return res.status(403).json({
+        message: 'Access denied. Insufficient permissions.'
       });
     }
 
-    next();
+    return next();
   };
 };
 

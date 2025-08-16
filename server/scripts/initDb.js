@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const Equipment = require('../models/Equipment');
 const Location = require('../models/Location');
-require('dotenv').config();
+require('../config/loadEnv');
 
 const initializeDatabase = async () => {
   try {

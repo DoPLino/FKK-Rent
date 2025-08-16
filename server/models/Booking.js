@@ -17,7 +17,13 @@ const bookingSchema = new mongoose.Schema({
   },
   endDate: {
     type: Date,
-    required: [true, 'End date is required']
+    required: [true, 'End date is required'],
+    validate: {
+      validator(value) {
+        return !this.startDate || value > this.startDate;
+      },
+      message: 'End date must be after start date'
+    }
   },
   status: {
     type: String,
@@ -190,44 +196,52 @@ bookingSchema.virtual('isOverdue').get(function() {
 
 // Virtual for days overdue
 bookingSchema.virtual('daysOverdue').get(function() {
-  if (!this.isOverdue) return 0;
   const now = new Date();
-  const overdueMs = now - this.endDate;
-  return Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
+  if (this.endDate && now > this.endDate) {
+    const diffMs = now - this.endDate;
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  }
+  return 0;
 });
 
 // Pre-save middleware to calculate total cost
 bookingSchema.pre('save', function(next) {
-  if (this.startDate && this.endDate && this.rentalRate) {
-    const duration = this.duration;
-    let cost = 0;
-    
-    if (duration >= 30 && this.rentalRate.monthly) {
-      const months = Math.floor(duration / 30);
-      const remainingDays = duration % 30;
-      cost = (months * this.rentalRate.monthly) + (remainingDays * this.rentalRate.daily);
-    } else if (duration >= 7 && this.rentalRate.weekly) {
-      const weeks = Math.floor(duration / 7);
-      const remainingDays = duration % 7;
-      cost = (weeks * this.rentalRate.weekly) + (remainingDays * this.rentalRate.daily);
-    } else {
-      cost = duration * this.rentalRate.daily;
+  try {
+    if (this.startDate && this.endDate && this.rentalRate && this.rentalRate.daily != null) {
+      const duration = this.duration;
+      let cost = 0;
+
+      if (duration >= 30 && this.rentalRate.monthly != null) {
+        const months = Math.floor(duration / 30);
+        const remainingDays = duration % 30;
+        cost = (months * this.rentalRate.monthly) + (remainingDays * this.rentalRate.daily);
+      } else if (duration >= 7 && this.rentalRate.weekly != null) {
+        const weeks = Math.floor(duration / 7);
+        const remainingDays = duration % 7;
+        cost = (weeks * this.rentalRate.weekly) + (remainingDays * this.rentalRate.daily);
+      } else {
+        cost = duration * this.rentalRate.daily;
+      }
+
+      this.totalCost = cost;
     }
-    
-    this.totalCost = cost;
+    next();
+  } catch (err) {
+    next(err);
   }
-  next();
 });
 
 // Method to check out equipment
 bookingSchema.methods.checkOut = function(userId) {
+  if (this.status !== 'confirmed') {
+    throw new Error('Booking cannot be checked out from current status');
+  }
   this.status = 'active';
   this.checkOutDate = new Date();
   this.checkedOutBy = userId;
   return this.save();
 };
 
-// Method to check in equipment
 bookingSchema.methods.checkIn = function(userId, condition = 'good') {
   this.status = 'completed';
   this.checkInDate = new Date();

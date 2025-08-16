@@ -20,6 +20,7 @@ import NotFound from '../pages/NotFound/NotFound';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
+  const AUTH_DISABLED = String(process.env.REACT_APP_AUTH_DISABLE || '').toLowerCase() === 'true';
 
   if (loading) {
     return (
@@ -31,12 +32,12 @@ function AppRoutes() {
 
   return (
     <Routes>
-      {/* Public routes - These don't need AuthProvider */}
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
+      {/* Public routes - keep for completeness */}
+      {!AUTH_DISABLED && <Route path="/login" element={<Login />} />}
+      {!AUTH_DISABLED && <Route path="/register" element={<Register />} />}
       
       {/* Protected routes */}
-      <Route path="/" element={user ? <Layout /> : <Navigate to="/login" />}>
+      <Route path="/" element={AUTH_DISABLED || user ? <Layout /> : <Navigate to="/login" />}> 
         <Route index element={<Navigate to="/dashboard" />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="equipment" element={<EquipmentList />} />

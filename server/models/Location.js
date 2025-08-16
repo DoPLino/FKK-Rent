@@ -52,7 +52,16 @@ const locationSchema = new mongoose.Schema({
     used: {
       type: Number,
       min: [0, 'Used capacity cannot be negative'],
-      default: 0
+      default: 0,
+      validate: {
+        validator: function(value) {
+          if (!this || !this.capacity) return true;
+          const total = this.capacity.total;
+          if (typeof total !== 'number') return true;
+          return value <= total;
+        },
+        message: 'Used capacity ({VALUE}) cannot exceed total capacity'
+      }
     }
   },
   contactPerson: {
@@ -202,30 +211,33 @@ locationSchema.virtual('isAvailable').get(function() {
 });
 
 // Method to update capacity usage
-locationSchema.methods.updateCapacityUsage = function() {
-  return this.model('Equipment').countDocuments({ 
-    location: this._id, 
-    isActive: true 
-  }).then(count => {
-    this.capacity.used = count;
-    return this.save();
-  });
+locationSchema.methods.updateCapacityUsage = async function() {
+  const Equipment = this.model('Equipment');
+  const usedCount = await Equipment.countDocuments({ location: this._id, isActive: true });
+  if (!this.capacity) this.capacity = {};
+  this.capacity.used = usedCount;
+  return this.save();
 };
 
-// Method to check if location is accessible at given time
+// Method to check if location is accessible at a given date/time
 locationSchema.methods.isAccessible = function(date = new Date()) {
-  const dayOfWeek = date.toLocaleLowerCase().slice(0, 3);
-  const time = date.toTimeString().slice(0, 5);
-  
+  const dayOfWeek = date.toLocaleString('en-US', { weekday: 'long' }).toLowerCase(); // "monday"
+  const time = date.toTimeString().slice(0, 5); // "HH:MM"
+
   const daySchedule = this.accessHours[dayOfWeek];
-  if (!daySchedule || daySchedule.closed) return false;
-  
+  if (!daySchedule || daySchedule.closed || !daySchedule.open || !daySchedule.close) {
+    return false;
+  }
+
   return time >= daySchedule.open && time <= daySchedule.close;
 };
 
 // Static method to find available locations
 locationSchema.statics.findAvailable = function() {
-  return this.find({ isActive: true }).populate('parentLocation');
+  return this.find({ 
+    isActive: true,
+    $expr: { $lt: ['$capacity.used', '$capacity.total'] }
+  }).populate('parentLocation');
 };
 
 // Static method to find locations by type
@@ -235,8 +247,13 @@ locationSchema.statics.findByType = function(type) {
 
 // Static method to find locations by city
 locationSchema.statics.findByCity = function(city) {
+  const escapeRegex = (input) => {
+    if (typeof input !== 'string') return '';
+    return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  };
+  const safeCity = escapeRegex(city);
   return this.find({ 
-    'address.city': { $regex: city, $options: 'i' },
+    'address.city': { $regex: safeCity, $options: 'i' },
     isActive: true 
   });
 };

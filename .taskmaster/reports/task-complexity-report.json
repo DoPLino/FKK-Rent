@@ -1,0 +1,93 @@
+{
+	"meta": {
+		"generatedAt": "2025-08-08T15:08:34.243Z",
+		"tasksAnalyzed": 10,
+		"totalTasks": 10,
+		"analysisCount": 10,
+		"thresholdScore": 5,
+		"projectName": "Taskmaster",
+		"usedResearch": false
+	},
+	"complexityAnalysis": [
+		{
+			"taskId": 1,
+			"taskTitle": "Create New Database Models & Schema Updates",
+			"complexityScore": 6,
+			"recommendedSubtasks": 6,
+			"expansionPrompt": "Break Task 1 into 6 subtasks covering: (1) upgrade & pin mongoose v7, (2) scaffold /models folder structure and shared index, (3) author ABTest, PriceAlert, Variant sub-schemas with typings, (4) extend Equipment schema with priceHistory and update existing CRUD services, (5) write one-time migration script with safety checks and rollback, (6) author unit/ regression tests + staging verification steps. For each subtask list purpose, deliverables, time estimate, owner, blockers, and acceptance criteria.",
+			"reasoning": "Requires new schemas, cross-model references, migration, and test coverage; moderate DB risk but limited algorithmic depth."
+		},
+		{
+			"taskId": 2,
+			"taskTitle": "Establish /api/ai Route Group & Standard Response Middleware",
+			"complexityScore": 4,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Divide Task 2 into 4 subtasks: (1) create /api/ai router file with JWT guard, (2) implement apiResponse middleware with typings, (3) register router in main app with unit & integration tests, (4) stub controller files for damage, nlu, price-experiments, price-history, price-alerts and add example endpoints. Provide details, estimates, and acceptance criteria for each.",
+			"reasoning": "Mostly boilerplate Express plumbing and tests; few edge cases and no heavy logic."
+		},
+		{
+			"taskId": 3,
+			"taskTitle": "Implement Visual Damage Analysis Endpoint (Phase 1 Pixel Diff)",
+			"complexityScore": 7,
+			"recommendedSubtasks": 6,
+			"expansionPrompt": "Split Task 3 into 6 subtasks: (1) research & benchmark pixelmatch + pngjs + sharp pipeline, (2) build image normalization utility with max-dim resize, (3) code analyze controller with feature flag and error handling, (4) optional S3 diff uploader and config, (5) write unit, load, and contract tests with golden images, (6) update documentation & API spec. Detail outputs, effort, reviewers, and acceptance for each subtask.",
+			"reasoning": "Involves binary image processing, performance tuning, storage integration, and robust testing, increasing complexity."
+		},
+		{
+			"taskId": 4,
+			"taskTitle": "Implement Natural Language Interface Endpoints (Rule-based Parser)",
+			"complexityScore": 6,
+			"recommendedSubtasks": 5,
+			"expansionPrompt": "Break Task 4 into 5 subtasks: (1) design intent/entity schema and rule patterns, (2) implement parseText utility with unit tests, (3) build /nlu/parse endpoint with validation & error handling, (4) build /nlu/book business logic querying Equipment & Availability, (5) add env flag switch + integration & negative tests. Provide details, estimates, and acceptance metrics.",
+			"reasoning": "Moderate linguistic logic, two endpoints, external data queries, and switchable architecture add fair complexity."
+		},
+		{
+			"taskId": 5,
+			"taskTitle": "Implement Price History Retrieval & Price Alert CRUD",
+			"complexityScore": 5,
+			"recommendedSubtasks": 5,
+			"expansionPrompt": "Outline 5 subtasks: (1) create Joi/validator schemas for requests, (2) implement GET /price-history/:equipmentId controller, (3) implement POST/GET/DELETE price-alerts with access control, (4) write unit & integration tests for all flows, (5) update API docs and client SDK typings. Include objectives, hours, and acceptance criteria.",
+			"reasoning": "Standard REST CRUD with validation and auth; moderate because of user-scoped security and model interplay."
+		},
+		{
+			"taskId": 6,
+			"taskTitle": "Develop A/B Test Engine Core & Variant Assignment Middleware",
+			"complexityScore": 7,
+			"recommendedSubtasks": 6,
+			"expansionPrompt": "Decompose Task 6 into 6 subtasks: (1) create validation schemas & helpers for POST /price-experiments, (2) implement create & fetch controllers with metrics population, (3) build Redis-backed active test cache loader, (4) code abTestPricing middleware with session persistence, (5) statistical distribution test suite & Monte Carlo script, (6) documentation & admin usage guide. Provide deliverables and acceptance gates.",
+			"reasoning": "Requires correct traffic allocation, caching, persistence, and statistical tests—higher logical complexity and risk."
+		},
+		{
+			"taskId": 7,
+			"taskTitle": "Frontend: NLI Search Bar & Voice-to-Booking UI",
+			"complexityScore": 5,
+			"recommendedSubtasks": 5,
+			"expansionPrompt": "Split Task 7 into 5 subtasks: (1) design UI/UX wireframes and states, (2) build SearchBar component with text input and mic button using Web Speech API hook, (3) implement SuggestionsList rendering logic with MUI theming & dark mode, (4) integrate APIs and manage loading/error states, (5) create unit, accessibility, and Cypress E2E tests. Define outputs and success criteria.",
+			"reasoning": "Client-side components with voice input and API integration; moderate UI and testing effort."
+		},
+		{
+			"taskId": 8,
+			"taskTitle": "Frontend: Damage Analysis Photo Upload UI",
+			"complexityScore": 5,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Create 4 subtasks: (1) build Dropzone pair component with base64 conversion and validation, (2) integrate /api/ai/damage/analyze call and progress/overlay UI, (3) wire maintenance ticket save logic and threshold config, (4) write snapshot, responsiveness, and mock API tests. List deliverables and acceptance terms.",
+			"reasoning": "Standard React file upload and API visualization; limited algorithmic work but multiple UI states."
+		},
+		{
+			"taskId": 9,
+			"taskTitle": "Cron Scheduler & Nightly Workers (Metrics & Alert Notifications)",
+			"complexityScore": 6,
+			"recommendedSubtasks": 6,
+			"expansionPrompt": "Break Task 9 into 6 subtasks: (1) add node-cron setup with ENV gate, (2) implement ABTest metrics aggregation job, (3) implement price alert evaluation & notification job, (4) add logging/monitoring hooks and failure alerts, (5) author unit & integration tests with mocked time and DB, (6) update ops runbooks and deployment manifests. Provide details and acceptance checks.",
+			"reasoning": "Background jobs touching financial metrics and notifications; concurrency, error handling, and observability raise complexity."
+		},
+		{
+			"taskId": 10,
+			"taskTitle": "End-to-End Test Harness & CI Integration",
+			"complexityScore": 7,
+			"recommendedSubtasks": 7,
+			"expansionPrompt": "Divide Task 10 into 7 subtasks: (1) configure Jest with coverage thresholds and ts-jest, (2) set up Supertest suite for /api/ai endpoints with fixture seeding, (3) create Cypress docker-based e2e pipeline including Mongo & app compose, (4) add ESLint & Prettier checks to CI, (5) author GitHub Actions workflow matrix (Node 18/20) with caching, (6) generate coverage and lint reports as artifacts, (7) write failing-test sentinel to verify pipeline behavior. Include objectives, time, and acceptance criteria.",
+			"reasoning": "Cross-layer testing, container orchestration, and CI automation demand coordinated tooling and environment setup."
+		}
+	]
+}

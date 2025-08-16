@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   EyeIcon, 
@@ -13,6 +13,14 @@ import { toast } from 'react-hot-toast';
 const Login = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const AUTH_DISABLED = String(process.env.REACT_APP_AUTH_DISABLE || '').toLowerCase() === 'true';
+  useEffect(() => {
+    if (AUTH_DISABLED) {
+      // Immediately redirect to dashboard when auth is disabled
+      navigate('/dashboard', { replace: true });
+    }
+  }, [AUTH_DISABLED, navigate]);
+
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -82,8 +90,8 @@ const Login = () => {
 
   const fillTestData = () => {
     setFormData({
-      email: 'admin@example.com',
-      password: 'password123'
+      email: 'admin@filmequipment.com',
+      password: 'admin123'
     });
     setErrors({});
   };
@@ -247,10 +255,9 @@ const Login = () => {
               Demo Credentials
             </h3>
             <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-                  <p><strong>Admin:</strong> admin@example.com / password123</p>
-                  <p><strong>Staff:</strong> max.mustermann@example.com / password123</p>
-                  <p><strong>Staff:</strong> anna.schmidt@example.com / password123</p>
-                  <p><strong>External:</strong> tom.weber@example.com / password123</p>
+                  <p><strong>Admin:</strong> admin@filmequipment.com / admin123</p>
+                  <p><strong>Staff:</strong> staff1@filmequipment.com / staff123</p>
+                  <p><strong>External:</strong> user1@example.com / user123</p>
             </div>
           </div>
         </div>

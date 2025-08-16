@@ -4,10 +4,17 @@ const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
 const mongoose = require('mongoose');
-require('dotenv').config();
+const path = require('path');
+// Centralized env loader (dotenv-flow + zod validation)
+require('./config/loadEnv');
+// Initialize upload/env config (parses MAX_FILE_SIZE, resolves UPLOAD_PATH, ensures directory, exposes CORS)
+const { MAX_FILE_SIZE, UPLOAD_PATH, CORS } = require('./config/env');
 
 const app = express();
+// For secure cookies behind proxies (e.g., Heroku, Vercel)
+app.set('trust proxy', 1);
 
 // Security middleware
 app.use(helmet());
@@ -23,11 +30,26 @@ app.use('/api/', limiter);
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
-  credentials: true
+  origin: (origin, callback) => {
+    const allowed = CORS.allowedOrigins;
+
+    // If no Origin header (e.g., curl, same-origin), allow by default
+    if (!origin) return callback(null, true);
+
+    // When credentials are enabled, we must not use '*'. The cors middleware
+    // will echo back the request origin if we call callback(null, true) and
+    // the provided origin is allowed. Otherwise reject.
+    if (allowed.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: CORS.credentials,
+  methods: CORS.allowedMethods,
+  allowedHeaders: CORS.allowedHeaders,
+  maxAge: CORS.maxAge,
 }));
 
 // Logging middleware
@@ -51,6 +73,7 @@ const bookingRoutes = require('./routes/bookings');
 const userRoutes = require('./routes/users');
 const qrRoutes = require('./routes/qr');
 const locationRoutes = require('./routes/locations');
+const uploadRoutes = require('./routes/uploads');
 
 // Use routes
 app.use('/api/auth', authRoutes);
@@ -59,6 +82,7 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/qr', qrRoutes);
 app.use('/api/locations', locationRoutes);
+app.use('/api/uploads', uploadRoutes);
 
 // Equipment endpoints
 
@@ -85,23 +109,32 @@ const connectDB = async () => {
     console.log('✅ MongoDB connected successfully');
     return true;
   } catch (error) {
-    console.log('⚠️  MongoDB not available - running in development mode');
-    console.log('📝 Using mock data for development');
-    return false;
+    console.error('❌ Failed to connect to MongoDB');
+    console.error(error?.message || error);
+    // Abort startup to avoid running with a non-functional data layer
+    throw error;
   }
 };
 
 // Start server
 const PORT = process.env.PORT || 3001;
 const startServer = async () => {
-  await connectDB();
-  
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📱 Environment: ${process.env.NODE_ENV}`);
-    console.log(`🔗 API: http://localhost:${PORT}/api`);
-    console.log(`✅ Backend is ready with full features!`);
-  });
+  try {
+    await connectDB();
+
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📱 Environment: ${process.env.NODE_ENV}`);
+      console.log(`🔗 API: http://localhost:${PORT}/api`);
+      console.log(`📦 Upload path: ${UPLOAD_PATH}`);
+      console.log(`⬆️  Max file size: ${MAX_FILE_SIZE} bytes`);
+      console.log(`✅ Backend is ready with full features!`);
+    });
+  } catch (err) {
+    console.error('🛑 Aborting startup due to database connection failure.');
+    console.error(err?.message || err);
+    process.exit(1);
+  }
 };
 
 startServer();

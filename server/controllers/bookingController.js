@@ -1,7 +1,14 @@
 const Booking = require('../models/Booking');
 const Equipment = require('../models/Equipment');
 const User = require('../models/User');
+const mongoose = require('mongoose');
 const { validationResult } = require('express-validator');
+
+// Escape special regex characters to prevent ReDoS and unintended regex behavior
+const escapeRegex = (input) => {
+  if (typeof input !== 'string') return '';
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
 
 // Get all bookings with filtering and pagination
 const getAllBookings = async (req, res) => {
@@ -23,9 +30,10 @@ const getAllBookings = async (req, res) => {
     const filter = {};
     
     if (search) {
+      const safeSearch = escapeRegex(search);
       filter.$or = [
-        { purpose: { $regex: search, $options: 'i' } },
-        { notes: { $regex: search, $options: 'i' } }
+        { purpose: { $regex: safeSearch, $options: 'i' } },
+        { notes: { $regex: safeSearch, $options: 'i' } }
       ];
     }
 
@@ -46,9 +54,12 @@ const getAllBookings = async (req, res) => {
       filter.endDate = { $lte: new Date(endDate) };
     }
 
-    // Build sort object
-    const sort = {};
-    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    // Build sort object with whitelist validation to prevent NoSQL injection
+    const allowedSortFields = ['createdAt', 'startDate', 'status'];
+    const safeSortBy = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+    const normalizedSortOrder =
+      typeof sortOrder === 'string' && sortOrder.toLowerCase() === 'asc' ? 1 : -1;
+    const sort = { [safeSortBy]: normalizedSortOrder };
 
     // Calculate pagination
     const skip = (page - 1) * limit;
@@ -230,8 +241,20 @@ const updateBooking = async (req, res) => {
       });
     }
 
-    // Update booking
-    Object.assign(booking, updateData);
+    // Update booking safely with a whitelist to prevent modifying protected fields
+    const allowedFieldsToUpdate = [
+      'startDate',
+      'endDate',
+      'purpose',
+      'project',
+      'location',
+      'notes'
+    ];
+    allowedFieldsToUpdate.forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(updateData, field)) {
+        booking[field] = updateData[field];
+      }
+    });
     await booking.save();
 
     // Populate references
@@ -255,12 +278,17 @@ const updateBooking = async (req, res) => {
 
 // Approve booking
 const approveBooking = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     const { id } = req.params;
     const { notes } = req.body;
 
-    const booking = await Booking.findById(id);
+    // Fetch within the session to ensure transactional consistency
+    const booking = await Booking.findById(id).session(session);
     if (!booking) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(404).json({
         success: false,
         message: 'Booking not found'
@@ -268,6 +296,8 @@ const approveBooking = async (req, res) => {
     }
 
     if (booking.status !== 'pending') {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(400).json({
         success: false,
         message: 'Booking is not pending approval'
@@ -280,18 +310,21 @@ const approveBooking = async (req, res) => {
     booking.approvedAt = new Date();
     if (notes) booking.adminNotes = notes;
 
-    await booking.save();
+    await booking.save({ session });
 
     // Update equipment status
-    const equipment = await Equipment.findById(booking.equipment);
+    const equipment = await Equipment.findById(booking.equipment).session(session);
     if (equipment) {
       equipment.status = 'checked-out';
       equipment.lastBookedBy = booking.user;
       equipment.lastBookedAt = new Date();
-      await equipment.save();
+      await equipment.save({ session });
     }
 
-    // Populate references
+    await session.commitTransaction();
+    session.endSession();
+
+    // Populate references (outside the transaction)
     await booking.populate('equipment', 'name category serialNumber');
     await booking.populate('user', 'firstName lastName email');
     await booking.populate('approvedBy', 'firstName lastName');
@@ -302,6 +335,10 @@ const approveBooking = async (req, res) => {
       data: booking
     });
   } catch (error) {
+    try {
+      await session.abortTransaction();
+    } catch (_) { /* noop */ }
+    session.endSession();
     console.error('Error approving booking:', error);
     res.status(500).json({
       success: false,
@@ -333,6 +370,7 @@ const cancelBooking = async (req, res) => {
     }
 
     // Update booking status
+    const previousStatus = booking.status;
     booking.status = 'cancelled';
     booking.cancelledBy = req.user._id;
     booking.cancelledAt = new Date();
@@ -341,7 +379,7 @@ const cancelBooking = async (req, res) => {
     await booking.save();
 
     // Update equipment status if it was checked out
-    if (booking.status === 'active' || booking.status === 'approved') {
+    if (previousStatus === 'active' || previousStatus === 'approved') {
       const equipment = await Equipment.findById(booking.equipment);
       if (equipment) {
         equipment.status = 'available';

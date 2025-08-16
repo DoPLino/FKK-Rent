@@ -84,14 +84,14 @@ userSchema.virtual('fullName').get(function() {
 });
 
 // Pre-save middleware to hash password
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', function(next) {
   if (!this.isModified('password')) {
     return next();
   }
-  
+
   try {
-    const salt = await bcrypt.genSalt(12);
-    this.password = await bcrypt.hash(this.password, salt);
+    const salt = bcrypt.genSaltSync(12);
+    this.password = bcrypt.hashSync(this.password, salt);
     next();
   } catch (error) {
     next(error);
@@ -99,23 +99,17 @@ userSchema.pre('save', async function(next) {
 });
 
 // Method to compare password
-userSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
+userSchema.methods.comparePassword = function(candidatePassword) {
+  return bcrypt.compareSync(candidatePassword, this.password);
 };
 
-// Method to generate JWT token
+// Deprecated: generateAuthToken moved to controller using access/refresh tokens
 userSchema.methods.generateAuthToken = function() {
-  return jwt.sign(
-    { 
-      id: this._id, 
-      email: this.email, 
-      role: this.role 
-    },
-    process.env.JWT_SECRET,
-    { 
-      expiresIn: process.env.JWT_EXPIRE || '7d' 
-    }
-  );
+  const jwt = require('jsonwebtoken');
+  const secret = process.env.ACCESS_TOKEN_SECRET || process.env.JWT_SECRET;
+  const expiresIn = process.env.ACCESS_TOKEN_EXPIRES || process.env.JWT_EXPIRE || '15m';
+  const algorithm = process.env.JWT_ALGORITHM || 'HS256';
+  return jwt.sign({ id: this._id, email: this.email, role: this.role }, secret, { expiresIn, algorithm });
 };
 
 // Method to get public profile (without sensitive data)

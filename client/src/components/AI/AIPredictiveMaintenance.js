@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CogIcon, ExclamationTriangleIcon, CheckCircleIcon, 
-  ClockIcon, WrenchScrewdriverIcon, ChartBarIcon,
+  ClockIcon, WrenchScrewdriverIcon, ChartBarIcon, CalendarIcon,
   ArrowTrendingUpIcon, ArrowTrendingDownIcon
 } from '@heroicons/react/24/outline';
 import { aiService } from '../../services/aiService';

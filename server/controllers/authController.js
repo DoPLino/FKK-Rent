@@ -1,6 +1,52 @@
 const User = require('../models/User');
+const crypto = require('crypto');
 const { validationResult } = require('express-validator');
 const mongoose = require('mongoose');
+const {
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+  setAuthCookies,
+  clearAuthCookies,
+} = require('../utils/jwt');
+
+// Sanitize incoming preferences to prevent prototype pollution and only allow whitelisted fields
+const sanitizePreferences = (incoming) => {
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+    return {};
+  }
+
+  const safe = {};
+
+  if (typeof incoming.language === 'string') {
+    safe.language = incoming.language;
+  }
+
+  if (typeof incoming.theme === 'string') {
+    safe.theme = incoming.theme;
+  }
+
+  if (
+    incoming.notifications &&
+    typeof incoming.notifications === 'object' &&
+    !Array.isArray(incoming.notifications)
+  ) {
+    const notif = {};
+    if (typeof incoming.notifications.email === 'boolean') {
+      notif.email = incoming.notifications.email;
+    }
+    if (typeof incoming.notifications.push === 'boolean') {
+      notif.push = incoming.notifications.push;
+    }
+
+    // Only set notifications if we actually whitelisted something
+    if (Object.keys(notif).length > 0) {
+      safe.notifications = notif;
+    }
+  }
+
+  return safe;
+};
 
 // @desc    Register a new user
 // @route   POST /api/auth/register
@@ -50,12 +96,16 @@ const register = async (req, res) => {
 
     await user.save();
 
-    // Generate JWT token
-    const token = user.generateAuthToken();
+    // Generate access and refresh tokens
+    const payload = { id: user._id.toString(), email: user.email, role: user.role };
+    const accessToken = signAccessToken(payload);
+    const refreshToken = signRefreshToken({ id: user._id.toString() });
+    setAuthCookies(res, { accessToken, refreshToken });
 
     res.status(201).json({
       message: 'User registered successfully',
-      token,
+      token: accessToken,
+      refreshToken,
       user: user.getPublicProfile()
     });
   } catch (error) {
@@ -81,8 +131,48 @@ const login = async (req, res) => {
 
     const { email, password } = req.body;
 
-    // Development mode: Allow login without MongoDB
-    if (process.env.NODE_ENV === 'development' && !mongoose.connection.readyState) {
+    // Fast-bypass login in development when AUTH_DISABLE is true
+    const authDisabled = String(process.env.AUTH_DISABLE || '').toLowerCase() === 'true';
+    if (authDisabled && process.env.NODE_ENV === 'development') {
+      const mockUser = new User({
+        _id: '000000000000000000000000',
+        username: 'dev',
+        email: 'dev@local',
+        firstName: 'Dev',
+        lastName: 'Mode',
+        role: 'admin',
+        department: 'IT',
+        phone: '+49 0000 000000',
+        isActive: true,
+        password: 'ignored'
+      });
+      const payload = { id: mockUser._id.toString(), email: mockUser.email, role: mockUser.role };
+      const token = signAccessToken(payload);
+      const refreshToken = signRefreshToken({ id: mockUser._id.toString() });
+      setAuthCookies(res, { accessToken: token, refreshToken });
+      return res.json({
+        success: true,
+        data: {
+          token,
+          refreshToken,
+          user: mockUser.getPublicProfile ? mockUser.getPublicProfile() : {
+            id: mockUser._id,
+            email: mockUser.email,
+            firstName: mockUser.firstName,
+            lastName: mockUser.lastName,
+            role: mockUser.role,
+          }
+        },
+        message: 'Login successful (Auth disabled in development)'
+      });
+    }
+
+    // Development mode: Allow login without MongoDB, gated by explicit flag
+    const devLoginEnabled = (
+      process.env.NODE_ENV === 'development' &&
+      String(process.env.ENABLE_DEV_LOGIN || '').toLowerCase() === 'true'
+    );
+    if (devLoginEnabled && !mongoose.connection.readyState) {
       // Mock login for development
       if (email === 'admin@example.com' && password === 'password123') {
         const mockUser = {
@@ -127,13 +217,17 @@ const login = async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
-    // Generate JWT token
-    const token = user.generateAuthToken();
+    // Generate access and refresh tokens
+    const payload = { id: user._id.toString(), email: user.email, role: user.role };
+    const token = signAccessToken(payload);
+    const refreshToken = signRefreshToken({ id: user._id.toString() });
+    setAuthCookies(res, { accessToken: token, refreshToken });
 
     res.json({
       success: true,
       data: {
         token,
+        refreshToken,
         user: user.getPublicProfile()
       },
       message: 'Login successful'
@@ -192,7 +286,15 @@ const updateProfile = async (req, res) => {
     if (department) user.department = department;
     if (phone) user.phone = phone;
     if (preferences) {
-      user.preferences = { ...user.preferences, ...preferences };
+      const safePrefs = sanitizePreferences(preferences);
+      user.preferences = {
+        ...user.preferences,
+        ...safePrefs,
+        notifications: {
+          ...(user.preferences?.notifications || {}),
+          ...(safePrefs.notifications || {}),
+        },
+      };
     }
 
     await user.save();
@@ -225,6 +327,11 @@ const changePassword = async (req, res) => {
     const { currentPassword, newPassword } = req.body;
 
     const user = await User.findById(req.user._id).select('+password');
+    if (!user) {
+      return res.status(404).json({
+        message: 'User not found'
+      });
+    }
 
     // Verify current password
     const isMatch = await user.comparePassword(currentPassword);
@@ -249,19 +356,30 @@ const changePassword = async (req, res) => {
   }
 };
 
-// @desc    Refresh token
+// @desc    Refresh access token using refresh token
 // @route   POST /api/auth/refresh
-// @access  Private
+// @access  Public (uses refresh token)
 const refreshToken = async (req, res) => {
   try {
-    const user = req.user;
-    
-    // Generate new token
-    const token = user.generateAuthToken();
+    const provided = req.cookies?.refreshToken || req.body?.refreshToken || req.headers['x-refresh-token'];
+    if (!provided) {
+      return res.status(401).json({ message: 'Refresh token required' });
+    }
+
+    const decoded = verifyRefreshToken(provided);
+    const user = await User.findById(decoded.id).select('-password');
+    if (!user || !user.isActive) {
+      return res.status(401).json({ message: 'Invalid refresh token' });
+    }
+
+    const payload = { id: user._id.toString(), email: user.email, role: user.role };
+    const accessToken = signAccessToken(payload);
+    // Optionally rotate refresh token (can be added later with blacklist support)
+    setAuthCookies(res, { accessToken, refreshToken: provided });
 
     res.json({
       message: 'Token refreshed successfully',
-      token,
+      token: accessToken,
       user: user.getPublicProfile()
     });
   } catch (error) {
@@ -277,8 +395,8 @@ const refreshToken = async (req, res) => {
 // @access  Private
 const logout = async (req, res) => {
   try {
-    // In a stateless JWT system, logout is handled client-side
-    // by removing the token. However, we can log the logout event
+    // Clear auth cookies if used
+    clearAuthCookies(res);
     res.json({
       message: 'Logged out successfully'
     });
@@ -305,10 +423,15 @@ const forgotPassword = async (req, res) => {
     }
 
     // Generate reset token (valid for 1 hour)
-    const resetToken = require('crypto').randomBytes(32).toString('hex');
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = crypto
+      .createHash('sha256')
+      .update(resetToken)
+      .digest('hex');
     const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour
 
-    user.resetPasswordToken = resetToken;
+    // Store hashed token and expiry in DB
+    user.resetPasswordToken = resetTokenHash;
     user.resetPasswordExpires = resetTokenExpiry;
     await user.save();
 
@@ -333,8 +456,14 @@ const resetPassword = async (req, res) => {
   try {
     const { resetToken, newPassword } = req.body;
 
+    // Hash the provided token to compare with stored hash
+    const providedTokenHash = crypto
+      .createHash('sha256')
+      .update(resetToken)
+      .digest('hex');
+
     const user = await User.findOne({
-      resetPasswordToken: resetToken,
+      resetPasswordToken: providedTokenHash,
       resetPasswordExpires: { $gt: Date.now() }
     });
 

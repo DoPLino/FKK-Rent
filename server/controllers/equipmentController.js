@@ -2,6 +2,18 @@ const Equipment = require('../models/Equipment');
 const QRCode = require('qrcode');
 const { validationResult } = require('express-validator');
 
+// Allowed status values for equipment lifecycle
+const ALLOWED_STATUSES = ['available', 'checked-out', 'maintenance', 'damaged'];
+
+// Whitelist of allowed sortable fields to prevent misuse of user-provided sort keys
+const ALLOWED_SORT_FIELDS = ['createdAt', 'name'];
+
+// Escape special regex characters to prevent ReDoS and unintended regex behavior
+const escapeRegex = (input) => {
+  if (typeof input !== 'string') return '';
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
 // Get all equipment with filtering and pagination
 const getAllEquipment = async (req, res) => {
   try {
@@ -16,16 +28,25 @@ const getAllEquipment = async (req, res) => {
       sortOrder = 'desc'
     } = req.query;
 
+    // Normalize and clamp pagination params
+    const MAX_LIMIT = 100;
+    const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+    const parsedLimit = Math.min(
+      MAX_LIMIT,
+      Math.max(1, parseInt(limit, 10) || 10)
+    );
+
     // Build filter object
     const filter = {};
     
     if (search) {
+      const safeSearch = escapeRegex(search);
       filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { brand: { $regex: search, $options: 'i' } },
-        { model: { $regex: search, $options: 'i' } },
-        { serialNumber: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } }
+        { name: { $regex: safeSearch, $options: 'i' } },
+        { brand: { $regex: safeSearch, $options: 'i' } },
+        { model: { $regex: safeSearch, $options: 'i' } },
+        { serialNumber: { $regex: safeSearch, $options: 'i' } },
+        { description: { $regex: safeSearch, $options: 'i' } }
       ];
     }
 
@@ -41,20 +62,26 @@ const getAllEquipment = async (req, res) => {
       filter.location = location;
     }
 
-    // Build sort object
-    const sort = {};
-    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    // Build sort object with whitelist validation to prevent unsafe field usage
+    const safeSortBy =
+      typeof sortBy === 'string' && ALLOWED_SORT_FIELDS.includes(sortBy)
+        ? sortBy
+        : 'createdAt';
+
+    const safeSortOrder = sortOrder === 'asc' ? 1 : -1; // default to desc
+
+    const sort = { [safeSortBy]: safeSortOrder };
 
     // Calculate pagination
-    const skip = (page - 1) * limit;
+    const skip = (parsedPage - 1) * parsedLimit;
     const total = await Equipment.countDocuments(filter);
-    const totalPages = Math.ceil(total / limit);
+    const totalPages = Math.ceil(total / parsedLimit);
 
     // Get equipment with pagination
     const equipment = await Equipment.find(filter)
       .sort(sort)
       .skip(skip)
-      .limit(parseInt(limit))
+      .limit(parsedLimit)
       .populate('location', 'name')
       .populate('lastBookedBy', 'firstName lastName');
 
@@ -62,12 +89,12 @@ const getAllEquipment = async (req, res) => {
       success: true,
       data: equipment,
       pagination: {
-        currentPage: parseInt(page),
+        currentPage: parsedPage,
         totalPages,
         totalItems: total,
-        itemsPerPage: parseInt(limit),
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1
+        itemsPerPage: parsedLimit,
+        hasNextPage: parsedPage < totalPages,
+        hasPrevPage: parsedPage > 1
       }
     });
   } catch (error) {
@@ -125,18 +152,20 @@ const createEquipment = async (req, res) => {
 
     const equipmentData = req.body;
     
-    // Generate QR code
+    // First save the equipment to get the actual _id
+    const equipment = new Equipment(equipmentData);
+    await equipment.save();
+
+    // Now generate QR code using the saved _id
     const qrData = {
-      id: Date.now().toString(),
+      id: equipment._id.toString(),
       type: 'equipment',
-      name: equipmentData.name,
-      serialNumber: equipmentData.serialNumber
+      name: equipment.name,
+      serialNumber: equipment.serialNumber
     };
 
     const qrCodeImage = await QRCode.toDataURL(JSON.stringify(qrData));
-    equipmentData.qrCode = qrCodeImage;
-
-    const equipment = new Equipment(equipmentData);
+    equipment.qrCode = qrCodeImage;
     await equipment.save();
 
     res.status(201).json({
@@ -166,7 +195,7 @@ const createEquipment = async (req, res) => {
 const updateEquipment = async (req, res) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    const updateData = req.body || {};
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -177,10 +206,53 @@ const updateEquipment = async (req, res) => {
       });
     }
 
+    // Whitelist of fields that are allowed to be updated by clients
+    const allowedFields = [
+      'name',
+      'category',
+      'brand',
+      'model',
+      'description',
+      'specifications',
+      'images',
+      'status',
+      'location',
+      'purchaseDate',
+      'purchasePrice',
+      'currentValue',
+      'rentalRate',
+      'tags',
+      'notes',
+      'isActive'
+    ];
+
+    // Construct a sanitized update object containing only whitelisted fields
+    const sanitizedUpdate = {};
+    for (const field of allowedFields) {
+      if (Object.prototype.hasOwnProperty.call(updateData, field)) {
+        sanitizedUpdate[field] = updateData[field];
+      }
+    }
+
+    // Validate status if present
+    if (Object.prototype.hasOwnProperty.call(sanitizedUpdate, 'status')) {
+      if (typeof sanitizedUpdate.status !== 'string' || !ALLOWED_STATUSES.includes(sanitizedUpdate.status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid status. Allowed values are: ${ALLOWED_STATUSES.join(', ')}`
+        });
+      }
+    }
+
+    // Track who modified the record, without allowing the client to set it directly
+    if (req.user && req.user.id) {
+      sanitizedUpdate.lastModifiedBy = req.user.id;
+    }
+
     const equipment = await Equipment.findByIdAndUpdate(
       id,
-      updateData,
-      { new: true, runValidators: true }
+      { $set: sanitizedUpdate },
+      { new: true, runValidators: true, context: 'query' }
     ).populate('location', 'name');
 
     if (!equipment) {
@@ -369,15 +441,72 @@ const getEquipmentStats = async (req, res) => {
 // Search equipment by QR code
 const searchByQRCode = async (req, res) => {
   try {
-    const { code } = req.params;
+    // Support multiple input locations and formats:
+    // - Path param: :qrCode or :code (URL-encoded JSON, base64 JSON, or DataURL)
+    // - Query: ?qrCode= / ?code=
+    // - Body (for potential POST usage): { qrCode } or { code }
+    const rawInput =
+      (req.params && (req.params.qrCode || req.params.code)) ||
+      (req.query && (req.query.qrCode || req.query.code)) ||
+      (req.body && (req.body.qrCode || req.body.code));
+
+    if (!rawInput || typeof rawInput !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'QR code data is required'
+      });
+    }
+
+    const tryDecodeURIComponent = (value) => {
+      try { return decodeURIComponent(value); } catch (_) { return value; }
+    };
+
+    // Normalize input
+    let normalized = tryDecodeURIComponent(rawInput.trim());
+
+    // If input is a Data URL like: data:image/png;base64,XXXX
+    const dataUrlMatch = normalized.match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
+    if (dataUrlMatch && dataUrlMatch[1]) {
+      try {
+        const decoded = Buffer.from(dataUrlMatch[1], 'base64').toString('utf8');
+        normalized = decoded;
+      } catch (_) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid QR code DataURL'
+        });
+      }
+    }
+
+    // If it still doesn't look like JSON, try base64 decoding
+    if (typeof normalized === 'string' && !normalized.trim().startsWith('{')) {
+      const base64Like = /^[A-Za-z0-9+/=]+$/.test(normalized);
+      if (base64Like) {
+        try {
+          const decoded = Buffer.from(normalized, 'base64').toString('utf8');
+          if (decoded.trim().startsWith('{')) {
+            normalized = decoded;
+          }
+        } catch (_) {
+          // ignore; will fail JSON.parse below
+        }
+      }
+    }
 
     let qrData;
     try {
-      qrData = JSON.parse(code);
-    } catch (error) {
+      qrData = JSON.parse(normalized);
+    } catch (_) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid QR code format'
+        message: 'Invalid QR code format: expected JSON payload'
+      });
+    }
+
+    if (!qrData || !qrData.id) {
+      return res.status(400).json({
+        success: false,
+        message: 'QR code JSON must include an id'
       });
     }
 
@@ -415,6 +544,14 @@ const updateEquipmentStatus = async (req, res) => {
     const { id } = req.params;
     const { status, notes } = req.body;
 
+    // Validate status input
+    if (typeof status !== 'string' || !ALLOWED_STATUSES.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Allowed values are: ${ALLOWED_STATUSES.join(', ')}`
+      });
+    }
+
     const equipment = await Equipment.findByIdAndUpdate(
       id,
       { 
@@ -422,7 +559,7 @@ const updateEquipmentStatus = async (req, res) => {
         ...(notes && { notes }),
         updatedAt: new Date()
       },
-      { new: true }
+      { new: true, runValidators: true, context: 'query' }
     ).populate('location', 'name');
 
     if (!equipment) {
@@ -450,13 +587,47 @@ const updateEquipmentStatus = async (req, res) => {
 // Add maintenance record
 const addMaintenanceRecord = async (req, res) => {
   try {
+    // Ensure the request is authenticated before proceeding
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized: user authentication required'
+      });
+    }
+
     const { id } = req.params;
     const { description, cost, date } = req.body;
 
+    // Validate and normalize cost
+    let normalizedCost = 0;
+    if (typeof cost !== 'undefined') {
+      const parsedCost = Number(cost);
+      if (!Number.isFinite(parsedCost)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid cost: must be a number'
+        });
+      }
+      normalizedCost = parsedCost;
+    }
+
+    // Validate and normalize date
+    let normalizedDate = new Date();
+    if (typeof date !== 'undefined') {
+      const parsedDate = new Date(date);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date: must be a valid date'
+        });
+      }
+      normalizedDate = parsedDate;
+    }
+
     const maintenanceRecord = {
       description,
-      cost: cost || 0,
-      date: date || new Date(),
+      cost: normalizedCost,
+      date: normalizedDate,
       user: req.user.id
     };
 

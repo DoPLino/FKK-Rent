@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authService } from '../services/authService';
 
+const AUTH_DISABLED = String(process.env.REACT_APP_AUTH_DISABLE || '').toLowerCase() === 'true';
+
 const AuthContext = createContext();
 
 export const useAuth = () => {
@@ -16,6 +18,19 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (AUTH_DISABLED) {
+      // Development-only: auto sign-in as mock admin user
+      setUser({
+        _id: 'dev-user',
+        email: 'dev@local',
+        firstName: 'Dev',
+        lastName: 'User',
+        role: 'admin',
+        isActive: true
+      });
+      setLoading(false);
+      return;
+    }
     checkAuthStatus();
   }, []);
 
@@ -39,6 +54,17 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async (credentials) => {
+    if (AUTH_DISABLED) {
+      setUser({
+        _id: 'dev-user',
+        email: credentials?.email || 'dev@local',
+        firstName: 'Dev',
+        lastName: 'User',
+        role: 'admin',
+        isActive: true
+      });
+      return { success: true };
+    }
     try {
       const response = await authService.login(credentials);
       if (response.success) {
@@ -55,6 +81,17 @@ export const AuthProvider = ({ children }) => {
   };
 
   const register = async (userData) => {
+    if (AUTH_DISABLED) {
+      setUser({
+        _id: 'dev-user',
+        email: userData?.email || 'dev@local',
+        firstName: userData?.firstName || 'Dev',
+        lastName: userData?.lastName || 'User',
+        role: 'admin',
+        isActive: true
+      });
+      return { success: true };
+    }
     try {
       const response = await authService.register(userData);
       if (response.success) {

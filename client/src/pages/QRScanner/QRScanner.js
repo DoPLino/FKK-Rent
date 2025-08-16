@@ -10,7 +10,7 @@ import {
   XMarkIcon,
   MagnifyingGlassIcon
 } from '@heroicons/react/24/outline';
-import { QrScanner } from 'react-qr-scanner';
+import QrScanner from 'react-qr-scanner';
 import { equipmentService } from '../../services/equipmentService';
 import { toast } from 'react-hot-toast';
 
@@ -44,7 +44,11 @@ const QRScanner = () => {
 
   const handleError = (err) => {
     console.error('QR Scanner error:', err);
-    setError('Failed to access camera. Please check permissions and try again.');
+    if (err?.name === 'NotAllowedError') {
+      setError('Camera permission denied. Please allow camera access.');
+    } else {
+      setError('Failed to access camera. Please check permissions and try again.');
+    }
     setScanning(false);
   };
 
@@ -210,15 +214,13 @@ const QRScanner = () => {
                 <div className="relative">
                   <div className="aspect-video bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden">
                     <QrScanner
-                      ref={videoRef}
-                      onDecode={handleScan}
+                      delay={300}
                       onError={handleError}
+                      onScan={handleScan}
+                      style={{ width: '100%', height: '100%' }}
                       constraints={{
-                        video: {
-                          facingMode: 'environment'
-                        }
+                        video: { facingMode: 'environment' }
                       }}
-                      className="w-full h-full"
                     />
                   </div>
                   
