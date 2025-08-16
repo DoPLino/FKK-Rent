@@ -74,6 +74,8 @@ const userRoutes = require('./routes/users');
 const qrRoutes = require('./routes/qr');
 const locationRoutes = require('./routes/locations');
 const uploadRoutes = require('./routes/uploads');
+// Ensure mongoose registers all models before first use (fixes MissingSchemaError on populate)
+require('./models/Location');
 
 // Use routes
 app.use('/api/auth', authRoutes);

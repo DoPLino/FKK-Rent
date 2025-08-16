@@ -203,7 +203,8 @@ const queryValidation = [
 // Public routes
 router.get('/', queryValidation, getAllEquipment);
 router.get('/qr/:qrCode', getEquipmentByQR);
-router.get('/:id', param('id').isMongoId().withMessage('Valid equipment ID is required'), getEquipmentById);
+// Constrain :id to a 24-hex ObjectId to avoid conflicts with paths like /stats
+router.get('/:id([0-9a-fA-F]{24})', param('id').isMongoId().withMessage('Valid equipment ID is required'), getEquipmentById);
 
 // Protected routes
 router.use(authenticateToken);

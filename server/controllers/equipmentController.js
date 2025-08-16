@@ -1,6 +1,8 @@
 const Equipment = require('../models/Equipment');
 const QRCode = require('qrcode');
 const { validationResult } = require('express-validator');
+const Location = require('../models/Location');
+const mongoose = require('mongoose');
 
 // Allowed status values for equipment lifecycle
 const ALLOWED_STATUSES = ['available', 'checked-out', 'maintenance', 'damaged'];
@@ -150,8 +152,28 @@ const createEquipment = async (req, res) => {
       });
     }
 
-    const equipmentData = req.body;
-    
+    const equipmentData = req.body || {};
+
+    // Ensure createdBy is set
+    if (!equipmentData.createdBy && req.user) {
+      const userId = req.user.id || req.user._id;
+      if (userId) equipmentData.createdBy = userId;
+    }
+
+    // Ensure a location exists in dev when missing
+    if (!equipmentData.location) {
+      try {
+        let defaultLocation = await Location.findOne({ name: 'Default Location' }).select('_id');
+        if (!defaultLocation) {
+          const creator = (req.user && (req.user.id || req.user._id)) || new mongoose.Types.ObjectId('000000000000000000000000');
+          defaultLocation = await Location.create({ name: 'Default Location', createdBy: creator });
+        }
+        equipmentData.location = defaultLocation._id;
+      } catch (e) {
+        // continue and let schema validation handle if still missing
+      }
+    }
+
     // First save the equipment to get the actual _id
     const equipment = new Equipment(equipmentData);
     await equipment.save();

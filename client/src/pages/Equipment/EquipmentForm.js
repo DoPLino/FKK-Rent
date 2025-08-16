@@ -1,13 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   ArrowLeftIcon,
   CameraIcon,
-  PlusIcon,
   XMarkIcon,
-  MapPinIcon,
-  TagIcon,
-  DocumentTextIcon,
   CurrencyDollarIcon,
   InformationCircleIcon
 } from '@heroicons/react/24/outline';
@@ -17,7 +13,6 @@ import { toast } from 'react-hot-toast';
 const EquipmentForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const isEditing = !!id;
   
   const [formData, setFormData] = useState({
@@ -38,13 +33,7 @@ const EquipmentForm = () => {
   const [imagePreview, setImagePreview] = useState(null);
   const [imageFile, setImageFile] = useState(null);
 
-  useEffect(() => {
-    if (isEditing) {
-      loadEquipment();
-    }
-  }, [id]);
-
-  const loadEquipment = async () => {
+  const loadEquipment = useCallback(async () => {
     try {
       setLoading(true);
       const response = await equipmentService.getEquipmentById(id);
@@ -63,7 +52,15 @@ const EquipmentForm = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, navigate]);
+
+  useEffect(() => {
+    if (isEditing) {
+      loadEquipment();
+    }
+  }, [isEditing, loadEquipment]);
+
+  
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -156,7 +153,17 @@ const EquipmentForm = () => {
 
       if (response.success) {
         toast.success(isEditing ? 'Equipment updated successfully' : 'Equipment created successfully');
-        navigate(`/equipment/${response.data.id || id}`);
+        const newId = response.data?._id || response.data?.id || id;
+        if (!isEditing && newId) {
+          // Nach Erstellung QR-Code-Generierung anbieten
+          const gen = await equipmentService.generateQRCode(newId, { size: 400 });
+          if (gen.success && gen.data?.qrImageUrl) {
+            toast.success('QR code generated');
+          }
+          navigate(`/equipment/${newId}`);
+        } else {
+          navigate(`/equipment/${newId || id}`);
+        }
       } else {
         toast.error(response.message || 'Operation failed');
       }

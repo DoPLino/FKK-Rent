@@ -133,7 +133,7 @@ class EquipmentService {
   // Get equipment statistics
   async getEquipmentStats() {
     try {
-      const response = await api.get('/equipment/stats');
+      const response = await api.get('/equipment/stats/overview');
       return {
         success: true,
         data: response.data.data || response.data

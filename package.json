@@ -11,10 +11,17 @@
     "install-all": "npm install && cd server && npm install && cd ../client && npm install",
     "setup": "npm run install-all && npm run build"
   },
-  "keywords": ["film", "equipment", "rental", "management", "qr-code"],
+  "keywords": [
+    "film",
+    "equipment",
+    "rental",
+    "management",
+    "qr-code"
+  ],
   "author": "Film Equipment Manager",
   "license": "MIT",
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.12",
     "concurrently": "^8.2.2"
   }
 }
